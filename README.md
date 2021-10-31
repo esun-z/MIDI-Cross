@@ -22,3 +22,9 @@ Change the definition in RtMidi.h and the libs in MIDICrossGUI.pro to switch to 
 
 Both Qt and RtMidi support multi platforms, and there is no windows API used in the codes. Thus it will be easy to switch the target platform to Mac OSX or Linux.
 
+## Current Issue
+
+- The RtMidi sendMessage function do not work properly when sending multi messages to a multi channel midi device in a short time, 5ms for instance. 
+
+  I am not pretty sure if this is cased by RtMidi. However, PortMidi works properly facing this scene. Please try MidiRetransmit (Based on PortMidi) instead in this situation.
+
