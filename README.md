@@ -16,8 +16,6 @@ Qt 5.15.1
 
 Target Platform: Win32 (default)
 
-Compiler: MinGW32
-
 Change the definition in RtMidi.h and the libs in MIDICrossGUI.pro to switch to other target platforms.
 
 Both Qt and RtMidi support multi platforms, and there is no windows API used in the codes. Thus it will be easy to switch the target platform to Mac OSX or Linux.
