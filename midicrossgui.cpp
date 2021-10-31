@@ -28,13 +28,13 @@ MIDICrossGUI::MIDICrossGUI(QWidget *parent)
 //delete things when quit
 MIDICrossGUI::~MIDICrossGUI()
 {
-    //delete ui
-    delete ui;
-
     //stop retransmition if it launched
     if(transLaunched){
         StopTrans();
     }
+
+    //delete ui
+    delete ui;
 
     //delete Rtmidi devices
     if (device.RtmIn != nullptr){
@@ -46,7 +46,9 @@ MIDICrossGUI::~MIDICrossGUI()
         }
     }
 
-
+    //delete timer
+    delete timerPushQueue;
+    delete timerUpdateCount;
 }
 
 //initialize connection
@@ -58,6 +60,8 @@ void MIDICrossGUI::InitConnect(){
     QObject::connect(ui->pushButtonRemoveDest,SIGNAL(clicked()),this,SLOT(RemoveDest()));
     QObject::connect(ui->pushButtonLaunch,SIGNAL(clicked()),this,SLOT(LaunchTrans()));
     QObject::connect(ui->listWidgetInPort,SIGNAL(itemSelectionChanged()),this,SLOT(RestartTrans()));
+    QObject::connect(ui->checkBoxQueueOutput,SIGNAL(stateChanged(int)),this,SLOT(SwitchQueueOutput(int)));
+    QObject::connect(ui->pushButtonWebsite,SIGNAL(clicked()),this,SLOT(OpenHomePage()));
 
     return;
 }
@@ -78,14 +82,18 @@ void MIDICrossGUI::InitTimer(){
 
     timerUpdateCount = new QTimer(this);
     QObject::connect(timerUpdateCount,SIGNAL(timeout()),this,SLOT(UpdateNoteCount()));
-    timerUpdateCount->start(COUNTUPDATETIME);
+    timerUpdateCount->start(COUNTUPDATEDELAY);
+
+    timerPushQueue = new QTimer(this);
+    QObject::connect(timerPushQueue,SIGNAL(timeout()),this,SLOT(PushQueue()));
+    timerPushQueue->start(QUEUEPUSHDELAY);
     return;
 }
 
 //update note count
 void MIDICrossGUI::UpdateNoteCount(){
-    qDebug() << "Update Note Count:";
-    qDebug() << QString::fromStdString(std::to_string(noteCount));
+    //qDebug() << "Update Note Count:";
+    //qDebug() << QString::fromStdString(std::to_string(noteCount));
     ui->lcdNumberCount->display(QString::fromStdString(std::to_string(noteCount)));
     return;
 }
@@ -105,6 +113,25 @@ void MIDICrossGUI::SendLog(std::string str){
 void MIDICrossGUI::ClearLog(){
     ui->listWidgetLog->clear();
     noteCount = 0;
+    return;
+}
+
+//switch output selection when checkBos state changed
+void MIDICrossGUI::SwitchQueueOutput(int state){
+    if (state == Qt::Checked){
+        device.queueOutput = true;
+    }
+    else{
+        device.queueOutput = false;
+    }
+
+    return;
+}
+
+//visit website
+void MIDICrossGUI::OpenHomePage(){
+
+    QDesktopServices::openUrl(QUrl(QString("https://github.com/esun-z/MIDI-Cross")));
     return;
 }
 
@@ -440,17 +467,25 @@ void MIDICrossGUI::AddDest(){
         return;
     }
 
+    bool launched = transLaunched;
+    if(transLaunched){
+        StopTrans();
+    }
+
     QString portName = ui->listWidgetOutPort->currentItem()->text();
 
     if (PortExist(portName)){
+
+
         device.selDest << portName;
         device.numDest++;
         UpdateList();
 
-        if (transLaunched){
-            StopTrans();
+
+        if(launched){
             LaunchTrans();
         }
+
     }
     else{
         SendLog("* Selected port does not exist.");
@@ -472,12 +507,16 @@ void MIDICrossGUI::RemoveDest(){
         return;
     }
 
+    bool launched = transLaunched;
+    if(transLaunched){
+        StopTrans();
+    }
+
     device.selDest.takeAt(ui->listWidgetDest->currentRow());
     device.numDest--;
     UpdateList();
 
-    if (transLaunched){
-        StopTrans();
+    if (launched){
         LaunchTrans();
     }
 
@@ -486,6 +525,7 @@ void MIDICrossGUI::RemoveDest(){
 
 //Rtmidi callback function
 void MIDICrossGUI::RtmCallBack(double timeStamp, std::vector<unsigned char> *message, void *userData){
+    /*
     unsigned int nBytes = message->size();
     int type;
     for (unsigned int i = 0; i < nBytes; ++i) {
@@ -509,12 +549,79 @@ void MIDICrossGUI::RtmCallBack(double timeStamp, std::vector<unsigned char> *mes
         std::cout << (int)message->at(i) << "  ";
     }
     std::cout << "\nTime Stamp= " << timeStamp << "	User Data= " << userData << "\n";
-
-    for(unsigned int i=0;i<pointerUI->device.numDest;++i){
-        pointerUI->device.RtmOut[i]->sendMessage(message);
+    */
+    if(pointerUI->device.queueOutput){
+        pointerUI->AddtoQueue(*message);
+    }
+    else{
+        for(unsigned int i=0;i<pointerUI->device.numDest;++i){
+            pointerUI->device.RtmOut[i]->sendMessage(message);
+        }
     }
 
     pointerUI->noteCount++;
+
+    return;
+}
+
+//add a note to output queue
+void MIDICrossGUI::AddtoQueue(std::vector<unsigned char> message){
+    qDebug() << "Add to Queue";
+
+    outputQueue.note[outputQueue.inPtr].message = message;
+    outputQueue.inPtr++;
+    outputQueue.inPtr%=MAXQUEUELENGTH;
+
+    return;
+}
+
+//push all the notes in the queue to RtmOutput
+void MIDICrossGUI::PushQueue(){
+
+
+    if(outputQueue.outPtr != outputQueue.inPtr){
+
+        for(unsigned int i=0;i<device.numDest;++i){
+            device.RtmOut[i]->sendMessage(&outputQueue.note[outputQueue.outPtr].message);
+        }
+        /*
+        unsigned int nBytes = outputQueue.note[outputQueue.outPtr].message.size();
+        int type;
+        for (unsigned int i=0;i<outputQueue.outPtr + 1;++i){
+            if(nBytes == 0){
+                qDebug() << QString::fromStdString(std::to_string(i));
+                qDebug() << "outPtr O byte happens";
+            }
+        }
+        for (unsigned int i = 0; i < nBytes; ++i) {
+            type = i % 3;
+            switch (type) {
+                case 0:
+                    std::cout << "Channel = ";
+                    break;
+
+                case 1:
+                    std::cout << "Key = ";
+                    break;
+
+                case 2:
+                    std::cout << "Dynamic = ";
+                    break;
+
+                default:
+                    std::cout << "Unknown value = ";
+            }
+            std::cout << (int)outputQueue.note[outputQueue.outPtr].message.at(i) << "  ";
+        }
+
+        */
+        outputQueue.outPtr++;
+        outputQueue.outPtr%=MAXQUEUELENGTH;
+
+
+        qDebug() << "Push Queue";
+        //PushQueue();
+    }
 
     return;
 }
@@ -528,6 +635,11 @@ void MIDICrossGUI::LaunchTrans(){
 
     if(!PortExist(device.selInPort)){
         SendLog("* Selected input port does not exist.");
+        return;
+    }
+
+    if(device.numDest == 0){
+        SendLog("* No destination.");
         return;
     }
 
@@ -576,6 +688,8 @@ void MIDICrossGUI::StopTrans(){
         error.printMessage();
     }
 
+
+
     transLaunched = false;
 
     ui->pushButtonLaunch->setText("Launch");
@@ -587,6 +701,11 @@ void MIDICrossGUI::StopTrans(){
 
 //Restart retransmition when something changed
 void MIDICrossGUI::RestartTrans(){
+
+    bool launched = transLaunched;
+    if(transLaunched){
+        StopTrans();
+    }
 
     if (ui->listWidgetInPort->currentRow() == -1){
         //SendLog("* There is no input port selected.");
@@ -602,9 +721,10 @@ void MIDICrossGUI::RestartTrans(){
 
     device.selInPort = namePort;
 
-    if (transLaunched){
-        StopTrans();
+
+    if(launched){
         LaunchTrans();
     }
+
     return;
 }

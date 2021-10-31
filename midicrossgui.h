@@ -9,12 +9,15 @@
 #include <QString>
 #include <QStringList>
 #include <QTimer>
+#include <QDesktopServices>
+#include <QUrl>
 
 #include <RtMidi.h>
 
-#define MAXDESTINATION 512
-
-#define COUNTUPDATETIME 1000
+#define MAXDESTINATION 128
+#define COUNTUPDATEDELAY 1000
+#define QUEUEPUSHDELAY 1
+#define MAXQUEUELENGTH 512
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MIDICrossGUI; }
@@ -43,15 +46,30 @@ public:
 
         QStringList nameInPortList;
         QStringList nameOutPortList;
+
+        bool queueOutput = true;
     };
     MIDIDEVICE device;
 
+    struct NOTE{
+        std::vector<unsigned char> message;
+    };
+
+    struct NOTEQUEUE{
+        NOTE note[MAXQUEUELENGTH];
+        unsigned int inPtr = 0;
+        unsigned int outPtr = 0;
+    };
+    NOTEQUEUE outputQueue;
+
     std::string strLog;
     bool transLaunched = false;
-
-    static void RtmCallBack(double timeStamp, std::vector< unsigned char > *message, void *userData);
-
     unsigned long long noteCount = 0;
+
+    static void RtmCallBack(double timeStamp, std::vector<unsigned char> *message, void *userData);
+
+    void AddtoQueue(std::vector<unsigned char> message);
+
 
 public slots:
     void GetPort();
@@ -62,6 +80,9 @@ public slots:
     void StopTrans();
     void RestartTrans();
     void UpdateNoteCount();
+    void SwitchQueueOutput(int state);
+    void PushQueue();
+    void OpenHomePage();
 
 private:
     void InitConnect();
@@ -79,6 +100,7 @@ private:
     void UpdateList();
 
     QTimer *timerUpdateCount;
+    QTimer *timerPushQueue;
 };
 
 
