@@ -2,7 +2,7 @@
 
 Retransmit MIDI messages to multi MIDI ports.
 
-## Usage
+## How to Use
 
 This GUI program should be simple to use and the UI is designed to be user-friendly. Just read the description of each release to learn more.
 
